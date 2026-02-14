@@ -66,7 +66,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("WHATSAPP_ORIGIN")],
+    allow_origins=[os.getenv("WHATSAPP_ORIGIN")] if os.getenv("WHATSAPP_ORIGIN") else ["*"],  # Allow specific origin or all if not set
     allow_methods=["GET", "POST"],
 )
 
