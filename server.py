@@ -20,7 +20,7 @@ load_dotenv()
 # MongoDB Atlas connection string from environment variable
 MONGODB_URL = os.getenv("MONGODB_URL")
 # Agent service URL from environment variable
-AGENT_URL = os.getenv("AGENT_URL")  # e.g., https://your-agent-service.com/process
+AGENT_URL = os.getenv("AGENT_URL")  # e.g., https://agrigpt-backend-agent.onrender.com/chat
 
 # Global variables for MongoDB client and collections
 client = None
@@ -57,7 +57,13 @@ async def lifespan(app: FastAPI):
         print("MongoDB connection closed")
 
 # Initialize FastAPI app with lifespan handler
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="WhatsApp Bot Service",
+    description="Service to handle WhatsApp messages and interact with AI agent",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("WHATSAPP_ORIGIN")],
@@ -70,6 +76,63 @@ class WhatsAppRequest(BaseModel):
     """
     phoneNumber: str
     message: str
+
+@app.get("/")
+async def root():
+    """
+    Root endpoint - Returns service information and available endpoints
+    
+    Returns:
+        dict: Service status and endpoint information
+    """
+    return {
+        "status": "healthy",
+        "service": "WhatsApp Bot Service",
+        "version": "1.0.0",
+        "endpoints": {
+            "root": "GET / (Service info)",
+            "health": "GET /health",
+            "whatsapp": "POST /whatsapp (Main endpoint)",
+            "docs": "GET /docs (Swagger UI)",
+            "redoc": "GET /redoc (ReDoc UI)"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint - Returns service health status and database connection
+    
+    Returns:
+        dict: Health status of the service and its dependencies
+    """
+    # Check database connection
+    db_status = "disconnected"
+    try:
+        if client:
+            await client.admin.command('ping')
+            db_status = "connected"
+    except Exception as e:
+        print(f"Health check - Database error: {str(e)}")
+        db_status = f"error: {str(e)}"
+    
+    # Check agent service availability (optional quick check)
+    agent_status = "unknown"
+    if AGENT_URL:
+        agent_status = "configured"
+    else:
+        agent_status = "not configured"
+    
+    return {
+        "status": "healthy",
+        "service": "WhatsApp Bot Service",
+        "version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "dependencies": {
+            "database": db_status,
+            "agent_service": agent_status
+        }
+    }
 
 async def query_database(phoneNumber):
     """
@@ -121,23 +184,32 @@ async def query_database(phoneNumber):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 async def send_to_agent(message, user_data):
-    # return "i am the Agent"
     """
-    Send user query and data to external agent service via POST request
+    Send user message to external agent service via POST request
     Wait for agent's response and return it
+    
+    Agent Request Format:
+        POST /chat
+        {
+            "message": "user message here"
+        }
+    
+    Agent Response Format:
+        {
+            "response": "agent response here"
+        }
     
     Args:
         message: User's message/query
-        user_data: User's data from database
+        user_data: User's data from database (not sent to agent, kept for future use)
         
     Returns:
-        dict: Agent's response (returned as-is)
+        str: Agent's response text or error message if service unavailable
     """
     try:
-        # Prepare payload for agent service
+        # Prepare payload for agent service - only send message
         payload = {
-            "query": message,
-            "user_data": user_data
+            "message": message
         }
         
         # Use httpx async client to make POST request to agent
@@ -145,26 +217,51 @@ async def send_to_agent(message, user_data):
             response = await http_client.post(
                 AGENT_URL,
                 json=payload,
+                headers={
+                    "accept": "application/json",
+                    "Content-Type": "application/json"
+                },
                 timeout=120.0  # 120 second timeout
             )
             
             # Raise exception if request failed
             response.raise_for_status()
             
-            # Return agent's JSON response as-is
-            # return response.json()
-            return response.text  # Return as text to allow flexibility in agent response format
+            # Parse JSON response from agent
+            agent_data = response.json()
+            
+            # Extract and return the 'response' field from agent's JSON
+            return agent_data.get("response", "No response from agent")
             
     except httpx.TimeoutException:
-        # Handle timeout errors
-        raise HTTPException(status_code=504, detail="Agent service timeout")
-    except httpx.HTTPError as e:
-        # Handle HTTP errors from agent service
-        raise HTTPException(status_code=502, detail=f"Agent service error: {str(e)}")
+        # Handle timeout errors - agent service is taking too long
+        print(f"Agent service timeout for user {user_data.get('phoneNumber')}")
+        return "Sorry, our service is taking longer than expected. Please try again in a few moments."
+        
+    except httpx.HTTPStatusError as e:
+        # Handle HTTP status errors (4xx, 5xx)
+        print(f"Agent service HTTP error: {e.response.status_code} - {str(e)}")
+        if e.response.status_code == 405:
+            return "Sorry, our AI assistant is currently unavailable. We're working to restore the service. Please try again later."
+        elif e.response.status_code >= 500:
+            return "Sorry, our AI assistant is experiencing technical difficulties. Please try again in a few minutes."
+        else:
+            return "Sorry, we're unable to process your request right now. Please try again later."
+            
+    except httpx.ConnectError:
+        # Handle connection errors - service is down or unreachable
+        print(f"Agent service connection error - service may be down")
+        return "Sorry, our AI assistant is currently offline. We're working to restore the service. Please check back soon."
+        
+    except httpx.RequestError as e:
+        # Handle other request errors
+        print(f"Agent service request error: {str(e)}")
+        return "Sorry, we're having trouble connecting to our AI assistant. Please try again in a few moments."
+        
     except Exception as e:
-        # Handle any other errors
-        print(f"Agent communication error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error communicating with agent: {str(e)}")
+        # Handle any other unexpected errors
+        print(f"Unexpected agent communication error: {str(e)}")
+        return "Sorry, something went wrong. Please try again later."
 
 @app.post("/whatsapp")
 async def handle_whatsapp_request(req: WhatsAppRequest):
