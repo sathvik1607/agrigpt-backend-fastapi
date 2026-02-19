@@ -1,0 +1,45 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH into EC2 and deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}       # Your EC2 public IP
+          username: ${{ secrets.EC2_USER }}   # e.g. ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}     # Contents of your .pem file
+          port: 22
+          script: |
+            set -e
+
+            echo "==> Navigating to app directory"
+            cd /home/${{ secrets.EC2_USER }}/agrigpt-backend-agent
+
+            echo "==> Pulling latest code"
+            git pull origin main
+
+            echo "==> Activating virtual environment"
+            source venv/bin/activate
+
+            echo "==> Installing dependencies"
+            pip install -r requirements.txt --quiet
+
+            echo "==> Restarting systemd service"
+            sudo systemctl restart agrigpt-backend-agent
+
+            echo "==> Service status"
+            sudo systemctl status agrigpt-backend-agent --no-pager
+
+            echo "✅ Deployment complete!"
