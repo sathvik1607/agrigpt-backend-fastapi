@@ -25,7 +25,7 @@ jobs:
             set -e
 
             echo "==> Navigating to app directory"
-            cd /home/${{ secrets.EC2_USER }}/agrigpt-backend-agent
+             cd /agrigpt/agrigpt-backend-fastapi
 
             echo "==> Pulling latest code"
             git pull origin main
@@ -37,9 +37,9 @@ jobs:
             pip install -r requirements.txt --quiet
 
             echo "==> Restarting systemd service"
-            sudo systemctl restart agrigpt-backend-agent
+            sudo systemctl restart agrigpt-fastapi.service
 
             echo "==> Service status"
-            sudo systemctl status agrigpt-backend-agent --no-pager
+            sudo systemctl status agrigpt-fastapi.service --no-pager
 
             echo "✅ Deployment complete!"
