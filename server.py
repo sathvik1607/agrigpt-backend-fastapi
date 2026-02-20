@@ -295,6 +295,7 @@ async def send_to_agent(message: str, user_data: dict) -> str:
     try:
         # Prepare payload for agent service
         payload = {
+            "phone_number": phone_number,
             "message": message
         }
         
