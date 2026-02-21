@@ -88,11 +88,13 @@ app.add_middleware(
 
 class WhatsAppRequest(BaseModel):
     """Request model for incoming WhatsApp messages"""
+    chatId:str
     phoneNumber: str
     message: str
 
 class WhatsAppResponse(BaseModel):
     """Response model for WhatsApp messages"""
+    chatId:str
     phoneNumber: str
     message: str
     timestamp: str = None
@@ -399,6 +401,7 @@ async def handle_whatsapp_request(req: WhatsAppRequest):
     print("\n" + "🌟"*40)
     print(f"📲 NEW WHATSAPP MESSAGE")
     print("🌟"*40)
+    print(f"Chat Id:{req.chatId}")
     print(f"Phone: {req.phoneNumber}")
     print(f"Message: {req.message[:100]}...")
     print("🌟"*40 + "\n")
@@ -426,6 +429,7 @@ async def handle_whatsapp_request(req: WhatsAppRequest):
 
         # Step 5: Prepare and return response
         response_data = {
+            "chatId":req.chatId,
             "phoneNumber": req.phoneNumber,
             "message": agent_response,
             "timestamp": datetime.utcnow().isoformat(),
@@ -448,6 +452,7 @@ async def handle_whatsapp_request(req: WhatsAppRequest):
         
         # Return error response
         return {
+            "chatId":req.chatId,
             "phoneNumber": req.phoneNumber,
             "message": "Sorry, something went wrong processing your request. Please try again later.",
             "timestamp": datetime.utcnow().isoformat(),
